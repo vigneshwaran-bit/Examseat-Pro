@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ExamSeat Pro — Examination Seat Allocation & Hall Finder</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+  <div id="app">
+    <div class="srm-brand">
+      <img src="assets/srm-logo2.svg" alt="SRMIST Logo" class="srm-logo">
+    </div>
+
+    <!-- 1. Landing -->
+    <section class="view view-center" id="view-landing" data-view="landing">
+      <div class="auth-shell">
+        <div class="brand-block">
+          <span class="logo" aria-hidden="true">
+            <svg width="40" height="40" viewBox="0 0 40 40" fill="none">
+              <rect width="40" height="40" rx="12" fill="#1e3a8a"/>
+              <path d="M10 13h20M10 20h13M10 27h16" stroke="#fff" stroke-width="2.4" stroke-linecap="round"/>
+            </svg>
+          </span>
+          <h1>ExamSeat Pro</h1>
+          <p class="tagline">Examination Seat Allocation &amp; Hall Finder</p>
+        </div>
+        <div class="choice-grid">
+          <button class="choice-card" type="button" data-go="admin-login">
+            <strong>Admin Login</strong>
+            <span>Allocate seats and view hall status</span>
+          </button>
+          <button class="choice-card" type="button" data-go="student-login">
+            <strong>Student Login</strong>
+            <span>Find your examination hall</span>
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- 2. Admin Login -->
+    <section class="view view-center" id="view-admin-login" data-view="admin-login" hidden>
+      <div class="auth-shell form-shell">
+        <button class="text-link back-link" type="button" data-go="landing">Back</button>
+        <h1>Admin Login</h1>
+        <form id="adminLoginForm" class="stack-form" novalidate>
+          <label>
+            Employee ID
+            <input type="text" id="adminEmployeeId" name="employeeId" autocomplete="username" required placeholder="ENTER YOUR EMPLOYEE ID">
+          </label>
+          <label>
+            Passcode
+            <div class="password-wrapper">
+                  <input type="password" id="adminPasscode" name="passcode" autocomplete="current-password" required>
+                  <button type="button" 
+                    id="toggleAdminPasscode"
+                    class="password-toggle"
+                    onclick="toggleAdminPasscodeVisibility()"
+                    style="position:absolute; right:10px; top:50%; transform:translateY(-50%); width:30px; height:30px; padding:0; border:none; background:transparent; cursor:pointer; z-index:10;">
+                    👁
+                  </button>
+            </div>
+          </label>
+          <p class="form-error" id="adminLoginError" hidden></p>
+          <button class="btn primary" type="submit">Login</button>
+        </form>
+        <p class="muted center">New Admin? <button class="text-link" type="button" data-go="admin-signup">Sign Up</button></p>
+      </div>
+    </section>
+
+    <!-- 3. Admin Sign Up -->
+    <section class="view view-center" id="view-admin-signup" data-view="admin-signup" hidden>
+      <div class="auth-shell form-shell">
+        <button class="text-link back-link" type="button" data-go="admin-login">Back to Login</button>
+        <h1>Admin Sign Up</h1>
+        <form id="adminSignupForm" class="stack-form" novalidate>
+          <label>
+            Username
+            <input type="text" id="signupUsername" name="username" required maxlength="80" placeholder="Your name">
+          </label>
+          <label>
+            Employee ID
+            <input type="text" id="signupEmployeeId" name="employeeId" required maxlength="40" placeholder="e.g. EMP002">
+          </label>
+          <label>
+            Passcode
+            <input type="text" id="signupPasscode" name="passcode" readonly tabindex="-1" placeholder="Employee ID">
+          </label>
+          <p class="hint">The initial passcode is the same as the Employee ID.</p>
+          <p class="form-error" id="adminSignupError" hidden></p>
+          <button class="btn primary" type="submit">Create Account</button>
+        </form>
+      </div>
+    </section>
+
+    <!-- 4. Examination Details -->
+    <section class="view" id="view-exam-details" data-view="exam-details" hidden>
+      <header class="page-header">
+        <div>
+          <p class="eyebrow">Admin</p>
+          <h1>Examination Details</h1>
+        </div>
+        <button class="btn ghost" type="button" id="adminLogoutBtn">Logout</button>
+      </header>
+      <div class="page-body">
+        <form id="examDetailsForm" class="card form-card" novalidate>
+          <div class="form-grid">
+            <label>
+              Department
+              <select id="examDepartment" name="department" required>
+                <option value="CSE">CSE</option>
+                <option value="MECH">MECH</option>
+                <option value="ECE">ECE</option>
+                <option value="EEE">EEE</option>
+                <option value="CYBER SECURITY">CYBER SECURITY</option>
+                <option value="BME">BME</option>
+                <option value="BBA">BBA</option>
+                <option value="MBA">MBA</option>
+                <option value="MCA">MCA</option>
+                <option value="IT">IT</option>
+                <option value="CIVIL">CIVIL</option>
+                <option value="BIO TECHNOLOGY">BIO TECHNOLOGY</option>
+                <option value="AI&ML">AI&ML</option>
+                <option value="AI&DS">AI&DS</option>
+                <option value="BCA DATA SCIENCE">BCA DATA SCIENCE</option>
+                <option value="MBBS">MBBS</option>
+                <option value="BPT">BPT</option></select>
+            </label>
+            <label>
+              Year
+              <select id="examYear" name="year" required>
+                <option value="I">I</option>
+                <option value="II">II</option>
+                <option value="III">III</option>
+                <option value="IV">IV</option>
+                <option value="V">V</option>
+              </select>
+            </label>
+            <label>
+              Section
+              <select id="examSection" name="section" required>
+                <option value="A">A</option>
+                <option value="B">B</option>
+                <option value="C">C</option>
+                <option value="D">D</option>
+                <option value="E">E</option>
+                <option value="F">F</option>
+                <option value="G">G</option>
+                <option value="H">H</option>
+              </select>
+            </label>
+            <label>
+              Exam Name
+              <input type="text" id="examName" name="examName" required maxlength="80" placeholder="ENTER THE NAME OF THE EXAMINATON">
+            </label>
+            <div class="form-group">
+              <label for="examDate">Exam Date</label>
+              <input type="date" id="examDate" name="examDate" required>
+            </div>
+            <label>
+              Exam Timing
+              <input
+                  type="text"
+                  id="examTiming"
+                  name="examTiming"
+                  required
+                  maxlength="40"
+                  placeholder="ENTER THE EXAM TIMING">
+            </label>
+            <fieldset class="session-field">
+              <legend>Session</legend>
+              <label class="radio"><input type="radio" name="session" value="FN" required> FN</label>
+              <label class="radio"><input type="radio" name="session" value="AN"> AN</label>
+            </fieldset>
+          </div>
+          <p class="form-error" id="examDetailsError" hidden></p>
+          <button class="btn primary" type="submit">Next</button>
+        </form>
+      </div>
+    </section>
+
+    <!-- 5. Student data import -->
+    <section class="view" id="view-google-sheet" data-view="google-sheet" hidden>
+      <header class="page-header">
+        <div>
+          <p class="eyebrow">Admin</p>
+          <h1>Student Information</h1>
+        </div>
+        <div class="header-actions">
+          <button class="btn ghost" type="button" data-go="exam-details">Back</button>
+          <button class="btn ghost" type="button" data-logout>Logout</button>
+        </div>
+      </header>
+      <div class="page-body">
+        <div class="form-grid">
+          <article class="card student-import-card">
+            <h2>Import from Google Sheets</h2>
+            <p class="muted">Enter a Google Sheet link or spreadsheet ID. You’ll be asked to sign in and grant read-only access. A Google OAuth web client ID and the Sheets API must be configured first.</p>
+            <label for="googleSheetUrl">Google Sheet link or ID</label>
+            <input type="text" id="googleSheetUrl" autocomplete="url" placeholder="https://docs.google.com/spreadsheets/d/…">
+            <label for="googleSheetTab">Tab name <span class="muted">(optional; defaults to the first tab)</span></label>
+            <input type="text" id="googleSheetTab" placeholder="Students">
+            <button class="btn primary" type="button" id="connectSheetBtn">Connect Google Sheet</button>
+          </article>
+          <article class="card student-import-card">
+            <h2>Upload a student list</h2>
+            <p class="muted">Choose an Excel or CSV file from your computer. The file is read in your browser.</p>
+            <label for="studentFileInput">Student file (.xlsx, .xls, .csv)</label>
+            <input type="file" id="studentFileInput" accept=".xlsx,.xls,.csv,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel">
+            <p class="hint">Include Register Number and Student Name columns. Department, Year, and Section columns are optional and default to the exam details above.</p>
+            <button class="btn primary" type="button" id="uploadStudentsBtn">Import file</button>
+          </article>
+        </div>
+        <p class="form-error" id="sheetError" role="alert" hidden></p>
+        <article class="card table-wrap" id="sheetPreview" hidden>
+          <h2>Student data preview</h2>
+          <p class="muted" id="studentImportSummary"></p>
+          <div class="table-scroll">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Register Number</th>
+                  <th>Student Name</th>
+                  <th>Department</th>
+                  <th>Year</th>
+                  <th>Section</th>
+                </tr>
+              </thead>
+              <tbody id="sheetTableBody"></tbody>
+            </table>
+          </div>
+          <button class="btn primary" type="button" id="sheetContinueBtn">Continue to Seat Allocation</button>
+        </article>
+      </div>
+    </section>
+
+    <!-- 6. Seat Allocation -->
+    <section class="view" id="view-allocation" data-view="allocation" hidden>
+      <header class="page-header">
+        <div>
+          <p class="eyebrow">Admin</p>
+          <h1>Seat Allocation</h1>
+        </div>
+        <div class="header-actions">
+          <button class="btn ghost" type="button" data-go="google-sheet">Back</button>
+          <button class="btn ghost" type="button" data-logout>Logout</button>
+        </div>
+      </header>
+      <div class="page-body">
+        <article class="card toolbar-card">
+          <p class="muted">Classroom layout: 3 rows × 10 columns × 2 students per bench. Halls: A-101, A-102, A-103. Departments: CSE and MECH.</p>
+          <p class="form-error" id="allocationError" hidden></p>
+          <div class="btn-row">
+            <button class="btn primary" type="button" id="runAllocBtn">Allocate Seats</button>
+            <button class="btn primary" type="button" id="viewResultBtn" hidden>View Final Result</button>
+          </div>
+        </article>
+        <div id="allocationHalls"></div>
+      </div>
+    </section>
+
+    <!-- 7. Final Admin Result -->
+    <section class="view" id="view-admin-result" data-view="admin-result" hidden>
+      <header class="page-header">
+        <div>
+          <p class="eyebrow">Admin</p>
+          <h1>Final Result</h1>
+        </div>
+        <div class="header-actions">
+          <button class="btn ghost" type="button" data-go="allocation">Back</button>
+          <button class="btn primary" type="button" id="addDepartmentBtn">Add Another Department</button>
+          <button class="btn ghost" type="button" data-logout>Logout</button>
+        </div>
+      </header>
+      <div class="page-body">
+        <article class="card">
+          <h2>Examination Details</h2>
+          <dl class="summary-list" id="resultExamSummary"></dl>
+        </article>
+        <article class="card">
+          <h2>Hall Status</h2>
+          <div class="status-grid" id="hallStatusGrid"></div>
+        </article>
+        <div id="resultSeating"></div>
+      </div>
+    </section>
+
+    <!-- 8. Student Login -->
+    <section class="view view-center" id="view-student-login" data-view="student-login" hidden>
+      <div class="auth-shell form-shell">
+        <button class="text-link back-link" type="button" data-go="landing">Back</button>
+        <h1>Student Login</h1>
+        <div class="stack-form">
+          <div class="stack-form">
+
+            <label>
+                Register Number
+                <input
+                    type="text"
+                    id="registerSearch"
+                    placeholder="Enter Register Number"
+                    autocomplete="off"
+                >
+            </label>
+        
+            <p id="studentSearchError" class="form-error"></p>
+        
+            <button
+               id="studentSearchBtn"
+               class="btn primary"
+               type="button">
+                SEARCH
+            </button>
+        
+            <div id="studentResult"></div>
+        
+        </div>
+      </div>
+       
+      </div>
+    </section>
+
+    <!-- 9. Student Dashboard -->
+    <section class="view" id="view-student-dashboard" data-view="student-dashboard" hidden>
+      <header class="page-header">
+        <div>
+          <p class="eyebrow">Student</p>
+          <h1>Find Your Examination Hall</h1>
+        </div>
+        <button class="btn ghost" type="button" id="studentLogoutBtn">Logout</button>
+      </header>
+      <div class="page-body narrow">
+        <form id="hallSearchForm" class="card search-card" novalidate>
+          <label>
+            Register Number
+            <div class="search-row">
+              <input type="text" id="registerSearch" placeholder="Enter Register Number..." autocomplete="off" required>
+              <button class="btn primary" type="submit">Search</button>
+            </div>
+          </label>
+          <p class="form-error" id="hallSearchError" hidden></p>
+        </form>
+        <article class="card result-card" id="studentResult" hidden></article>
+      </div>
+    </section>
+
+  </div>
+
+  <script src="config.js"></script>
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
+  <script src="store.js"></script>
+  <script src="validation.js"></script>
+  <script src="ui.js"></script>
+  <script src="allocation.js"></script>
+  <script src="app.js"></script>
+  <script>
+    function toggleAdminPasscodeVisibility() {
+        const input = document.getElementById("adminPasscode");
+        const button = document.getElementById("toggleAdminPasscode");
+    
+        if (!input || !button) return;
+    
+        if (input.type === "password") {
+            input.type = "text";
+            button.textContent = "👀";
+            button.setAttribute("aria-label", "Hide passcode");
+        } else {
+            input.type = "password";
+            button.textContent = "👁";
+        }
+    }
+    </script>
+</body>
+</html>
