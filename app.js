@@ -342,6 +342,7 @@ const App = {
       }
     });
     document.getElementById("viewResultBtn").addEventListener("click", () => this.go("admin-result"));
+    document.getElementById("downloadHallAllotmentBtn").addEventListener("click", () => this.downloadHallAllotment());
     document.getElementById("addDepartmentBtn").addEventListener("click", () => {
       this.go("exam-details");
     });
@@ -357,6 +358,78 @@ const App = {
     }
     resultBtn.hidden = false;
     wrap.innerHTML = this.seatingHtml(Store.state.allocation);
+  },
+
+  downloadHallAllotment() {
+    const allocation = Store.state.allocation;
+    if (!allocation) return;
+
+    const printWindow = window.open("", "_blank");
+    if (!printWindow) {
+      UI.setError("allocationError", "Allow pop-ups for this page to print or save the hall allotment as a PDF.");
+      return;
+    }
+
+    const exam = Store.state.examDetails || {};
+    const halls = allocation.halls || CONFIG.HALLS;
+    const hallSections = halls.map((hall) => {
+      const seats = allocation.seats
+        .filter((seat) => seat.hallId === hall.id && (seat.studentId || seat.registerNo))
+        .sort((a, b) => a.row - b.row || a.bench - b.bench || a.seat - b.seat);
+      const rows = seats.map((seat) => {
+        const student = seat.studentId ? Store.getStudentById(seat.studentId) : null;
+        return `
+          <tr>
+            <td>${UI.escape(seat.registerNo || student?.registerNo || "-")}</td>
+            <td>${UI.escape(seat.name || student?.name || "-")}</td>
+            <td>${UI.escape(seat.department || student?.department || "-")}</td>
+            <td>${UI.escape(seat.year || student?.year || "-")}</td>
+            <td>${UI.escape(seat.section || student?.section || "-")}</td>
+            <td>${UI.escape(String(seat.row))}</td>
+            <td>${UI.escape(String(seat.bench))}</td>
+            <td>${UI.escape(String(seat.seat))}</td>
+          </tr>`;
+      }).join("");
+      return `
+        <section class="hall-section">
+          <h2>${UI.escape(hall.name || hall.id)} <span>(${seats.length} students)</span></h2>
+          <table>
+            <thead><tr><th>Register No.</th><th>Student Name</th><th>Department</th><th>Year</th><th>Section</th><th>Row</th><th>Bench</th><th>Seat</th></tr></thead>
+            <tbody>${rows || `<tr><td colspan="8">No students allocated</td></tr>`}</tbody>
+          </table>
+        </section>`;
+    }).join("");
+    const title = [exam.examName || "Exam", exam.examDate, exam.session].filter(Boolean).join(" - ");
+
+    printWindow.document.open();
+    printWindow.document.write(`<!doctype html>
+      <html><head><meta charset="utf-8"><title>${UI.escape(title)} - Hall Allotment</title>
+      <style>
+        @page { size: A4 landscape; margin: 12mm; }
+        body { font: 12px Arial, sans-serif; color: #172033; }
+        h1 { margin: 0 0 8px; font-size: 22px; }
+        h2 { margin: 18px 0 8px; font-size: 16px; }
+        h2 span { font-size: 12px; font-weight: normal; }
+        .exam-details { margin-bottom: 14px; line-height: 1.6; }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { border: 1px solid #9aa4b2; padding: 5px 7px; text-align: left; }
+        th { background: #eef2f7; }
+        thead { display: table-header-group; }
+        tr { break-inside: avoid; }
+        .hall-section { break-inside: avoid-page; }
+        @media print { body { print-color-adjust: exact; } }
+      </style></head><body>
+        <h1>Hall Allotment</h1>
+        <div class="exam-details">
+          <strong>Exam:</strong> ${UI.escape(exam.examName || "-")} &nbsp;
+          <strong>Date:</strong> ${UI.escape(exam.examDate || "-")} &nbsp;
+          <strong>Time:</strong> ${UI.escape(exam.examTiming || "-")} &nbsp;
+          <strong>Session:</strong> ${UI.escape(exam.session || "-")}
+        </div>
+        ${hallSections}
+        <script>window.addEventListener("load", () => { window.focus(); window.print(); });</script>
+      </body></html>`);
+    printWindow.document.close();
   },
 
   seatingHtml(allocation) {
@@ -401,6 +474,8 @@ const App = {
     const registerNo = student?.registerNo || cell.registerNo;
     const name = student?.name || cell.name;
     const department = student?.department || cell.department;
+    const year = student?.year || cell.year;
+    const section = student?.section || cell.section;
 
     if (!registerNo || !name) {
       return `<div class="seat empty"><strong>Seat ${cell.seat}</strong>Empty</div>`;
@@ -414,8 +489,29 @@ const App = {
       <div class="seat ${cls}">
         <strong>${UI.escape(registerNo)}</strong>
         ${UI.escape(name)}
+        <small>${UI.escape([department, year ? `Year ${year}` : "", section ? `Section ${section}` : ""].filter(Boolean).join(" · "))}</small>
       </div>
     `;
+  },
+
+  allocationCohortsHtml(allocation, exam) {
+    const cohorts = new Map();
+    allocation.seats.filter((seat) => seat.studentId || seat.registerNo).forEach((seat) => {
+      const key = [seat.department, seat.year, seat.section]
+        .map((value) => String(value || "").trim().toUpperCase()).join("|");
+      if (!cohorts.has(key)) cohorts.set(key, new Set());
+      if (seat.registerNo) cohorts.get(key).add(seat.registerNo);
+    });
+    if (!cohorts.size) {
+      return UI.escape([exam.department, exam.year, exam.section].filter(Boolean).join(" · ") || "-");
+    }
+    return [...cohorts.entries()].map(([key, registers]) => {
+      const [department, year, section] = key.split("|");
+      const label = [department, year ? `Year ${year}` : "", section ? `Section ${section}` : ""]
+        .filter(Boolean).join(" · ");
+      const countLabel = `${registers.size} ${registers.size === 1 ? "student" : "students"}`;
+      return `${UI.escape(label)} <small>(${countLabel})</small>`;
+    }).join("<br>");
   },
 
   renderAdminResult() {
@@ -424,10 +520,8 @@ const App = {
     if (!exam || !allocation) return;
 
     document.getElementById("resultExamSummary").innerHTML = `
-      <div><dt>Department</dt><dd>${UI.escape(exam.department || "-")}</dd></div>
-      <div><dt>Year</dt><dd>${UI.escape(exam.year || "-")}</dd></div>
-      <div><dt>Section</dt><dd>${UI.escape(exam.section || "-")}</dd></div>
       <div><dt>Exam Name</dt><dd>${UI.escape(exam.examName || "-")}</dd></div>
+      <div><dt>Student Cohorts</dt><dd>${this.allocationCohortsHtml(allocation, exam)}</dd></div>
       <div><dt>Exam Date</dt><dd>${UI.escape(exam.examDate || "-")}</dd></div>
       <div><dt>Exam Timing</dt><dd>${UI.escape(exam.examTiming || "-")}</dd></div>
       <div><dt>Session</dt><dd>${UI.escape(exam.session || "-")}</dd></div>

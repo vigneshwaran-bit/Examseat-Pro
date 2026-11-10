@@ -44,7 +44,7 @@ class AllocationRequest(BaseModel):
     exam: ExamDetails
 
 
-app = FastAPI(title="ExamSeat Pro API", version="0.2.0")
+app = FastAPI(title="ExamSeat Pro API", version="0.3.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -130,9 +130,83 @@ def legacy_exam_id(exam_values: dict) -> str:
     return str(uuid.uuid5(uuid.NAMESPACE_URL, f"examseat-pro:{identity}"))
 
 
+def cohort_key(student: dict) -> tuple[str, int, str]:
+    return (
+        str(student.get("department") or "").strip().casefold(),
+        year_number(str(student.get("year") or "")),
+        str(student.get("section") or "").strip().casefold(),
+    )
+
+
+def plan_seat_assignments(students: list[dict], halls: list[dict], reserved_slots: set[tuple]) -> dict:
+    """Place each cohort in one seat position per bench, continuing hall by hall."""
+    cohorts = {}
+    for student in students:
+        cohorts.setdefault(cohort_key(student), []).append(student)
+    for cohort in cohorts.values():
+        cohort.sort(key=lambda student: str(student["register_number"]).casefold())
+
+    physical_slots = []
+    lane_slots = {}
+    for seat_number in range(1, max(hall["students_per_bench"] for hall in halls) + 1):
+        lane_slots[seat_number] = []
+        for hall in halls:
+            if seat_number > hall["students_per_bench"]:
+                continue
+            for row_number in range(1, hall["rows_count"] + 1):
+                for bench_number in range(1, hall["benches_per_row"] + 1):
+                    lane_slots[seat_number].append(
+                        (hall, row_number, bench_number, seat_number)
+                    )
+    for hall in halls:
+        for row_number in range(1, hall["rows_count"] + 1):
+            for bench_number in range(1, hall["benches_per_row"] + 1):
+                for seat_number in range(1, hall["students_per_bench"] + 1):
+                    physical_slots.append((hall, row_number, bench_number, seat_number))
+
+    used = set(reserved_slots)
+    assignments = {}
+    available_physical = [
+        slot for slot in physical_slots
+        if (slot[0]["id"], slot[1], slot[2], slot[3]) not in used
+    ]
+    cohort_count = max(1, max(hall["students_per_bench"] for hall in halls))
+
+    for index, cohort_students in enumerate(cohorts.values()):
+        preferred_seat = index + 1 if index < cohort_count else None
+        preferred = [
+            slot for slot in lane_slots.get(preferred_seat, [])
+            if (slot[0]["id"], slot[1], slot[2], slot[3]) not in used
+        ] if preferred_seat is not None else []
+        count = min(len(cohort_students), len(preferred))
+        chosen = preferred[:count]
+        remaining = cohort_students[count:]
+        if remaining:
+            fallback = [
+                slot for slot in available_physical
+                if (slot[0]["id"], slot[1], slot[2], slot[3]) not in used
+                and slot not in chosen
+            ]
+            if len(remaining) > len(fallback):
+                raise HTTPException(status_code=422, detail="There are more students than available seats.")
+            chosen.extend(fallback[:len(remaining)])
+        for student, (hall, row_number, bench_number, seat_number) in zip(cohort_students, chosen):
+            slot = (hall["id"], row_number, bench_number, seat_number)
+            assignments[student["id"]] = slot
+            used.add(slot)
+
+    if len(assignments) != len(students):
+        raise HTTPException(status_code=422, detail="There are more students than available seats.")
+    return assignments
+
+
 @app.get("/api/health")
 def health():
-    return {"status": "ok", "service": "examseat-pro-api"}
+    return {
+        "status": "ok",
+        "service": "examseat-pro-api",
+        "allocationStrategy": "cohort-seat-lanes",
+    }
 
 
 @app.post("/api/allocations")
@@ -148,15 +222,19 @@ def create_allocation(request: AllocationRequest):
         # Reuse an existing exam row for the same sitting, even when the
         # incoming students belong to a different department/year/section.
         matching_exams_result = supabase.table("exams").select(
-            "id"
-        ).eq("exam_name", exam_values["exam_name"]).eq(
-            "exam_date", exam_values["exam_date"]
-        ).eq("exam_time", exam_values["exam_time"]).eq(
-            "session", exam_values["session"]
-        ).execute()
-        matching_exam_ids = list({
-            row["id"] for row in (matching_exams_result.data or [])
-        })
+            "id,exam_name,exam_date,exam_time,session"
+        ).eq("exam_date", exam_values["exam_date"]).execute()
+        # Cohorts sometimes enter the same sitting with different capitalization
+        # or spacing. Reuse its existing exam row so later cohorts continue in
+        # the same allocation instead of starting a second set of seats.
+        canonical = lambda value: " ".join(str(value or "").split()).casefold()
+        matching_exam_rows = [
+            row for row in (matching_exams_result.data or [])
+            if canonical(row.get("exam_name")) == canonical(exam_values["exam_name"])
+            and canonical(row.get("exam_time")) == canonical(exam_values["exam_time"])
+            and canonical(row.get("session")) == canonical(exam_values["session"])
+        ]
+        matching_exam_ids = list({row["id"] for row in matching_exam_rows})
 
         allocated_exam_ids = set()
         if matching_exam_ids:
@@ -225,28 +303,22 @@ def create_allocation(request: AllocationRequest):
             }
         else:
             student_by_register = {}
-        input_by_db_id = {
-            student_by_register[student.registerNo.strip().casefold()]: student
-            for student in request.students
-            if student.registerNo.strip().casefold() in student_by_register
-        }
 
         current_result = supabase.table("seat_allocations").select(
-            "student_id,hall_id,row_number,bench_number,seat_number"
+            "id,student_id,hall_id,row_number,bench_number,seat_number,created_at,status"
         ).eq("exam_id", exam_id).execute()
         current_rows = current_result.data or []
+        active_rows = [row for row in current_rows if row.get("status") == "active"]
+        inactive_rows = [row for row in current_rows if row.get("status") != "active"]
         assigned_student_ids = {row["student_id"] for row in current_rows}
-        occupied = {
-            (row["hall_id"], row["row_number"], row["bench_number"], row["seat_number"])
-            for row in current_rows
-        }
 
-        all_slots = []
-        for hall in db_halls:
-            for row_number in range(1, hall["rows_count"] + 1):
-                for bench_number in range(1, hall["benches_per_row"] + 1):
-                    for seat_number in range(1, hall["students_per_bench"] + 1):
-                        all_slots.append((hall, row_number, bench_number, seat_number))
+        all_slots = [
+            (hall, row_number, bench_number, seat_number)
+            for hall in db_halls
+            for row_number in range(1, hall["rows_count"] + 1)
+            for bench_number in range(1, hall["benches_per_row"] + 1)
+            for seat_number in range(1, hall["students_per_bench"] + 1)
+        ]
         if len(all_slots) < len(current_rows):
             raise HTTPException(status_code=409, detail="Saved allocations exceed the configured hall capacity.")
 
@@ -257,38 +329,90 @@ def create_allocation(request: AllocationRequest):
             ),
             key=lambda student: student.registerNo.strip().casefold(),
         )
-        free_slots = [
-            slot for slot in all_slots
-            if (slot[0]["id"], slot[1], slot[2], slot[3]) not in occupied
-        ]
-        if len(unassigned) > len(free_slots):
-            raise HTTPException(status_code=422, detail="There are more students than available seats.")
+        all_student_ids = list({
+            row["student_id"] for row in active_rows
+        } | {
+            student_by_register[student.registerNo.strip().casefold()]
+            for student in request.students
+            if student.registerNo.strip().casefold() in student_by_register
+        })
+        saved_student_by_id = {}
+        if all_student_ids:
+            saved_student_result = supabase.table("students").select(
+                "id,register_number,name,department,year,section"
+            ).in_("id", all_student_ids).execute()
+            saved_student_by_id = {
+                student["id"]: student
+                for student in (saved_student_result.data or [])
+            }
 
-        new_rows = []
-        for student, (hall, row_number, bench_number, seat_number) in zip(unassigned, free_slots):
+        ordered_students = []
+        seen_student_ids = set()
+        for row in sorted(active_rows, key=lambda item: (item.get("created_at", ""), item["id"])):
+            student = saved_student_by_id.get(row["student_id"])
+            if not student:
+                raise HTTPException(status_code=409, detail="A saved student record is missing; resolve it before reallocating seats.")
+            ordered_students.append(student)
+            seen_student_ids.add(student["id"])
+        for student in unassigned:
             student_id = student_by_register.get(student.registerNo.strip().casefold())
             if not student_id:
                 raise HTTPException(status_code=500, detail="A student record could not be loaded after saving.")
-            new_rows.append({
-                "exam_id": exam_id,
-                "student_id": student_id,
-                "hall_id": hall["id"],
+            if student_id in seen_student_ids:
+                continue
+            saved_student = saved_student_by_id.get(student_id)
+            if not saved_student:
+                raise HTTPException(status_code=500, detail="A student record could not be loaded after saving.")
+            ordered_students.append(saved_student)
+            seen_student_ids.add(student_id)
+
+        reserved_slots = {
+            (row["hall_id"], row["row_number"], row["bench_number"], row["seat_number"])
+            for row in inactive_rows
+        }
+        if len(ordered_students) + len(inactive_rows) > len(all_slots):
+            raise HTTPException(status_code=422, detail="There are more students than available seats.")
+
+        planned_slots = plan_seat_assignments(ordered_students, db_halls, reserved_slots)
+        existing_allocation_id = {
+            row["student_id"]: row["id"] for row in active_rows
+        }
+        new_allocations = []
+        for student in ordered_students:
+            if student["id"] not in existing_allocation_id:
+                new_allocations.append({
+                    "id": str(uuid.uuid4()),
+                    "student_id": student["id"],
+                })
+                existing_allocation_id[student["id"]] = new_allocations[-1]["id"]
+
+        assignments = []
+        hall_ids = {str(hall["id"]): hall["id"] for hall in db_halls}
+        for student in ordered_students:
+            hall_id, row_number, bench_number, seat_number = planned_slots[student["id"]]
+            assignments.append({
+                "id": existing_allocation_id[student["id"]],
+                "hall_id": hall_ids[str(hall_id)],
                 "row_number": row_number,
                 "bench_number": bench_number,
                 "seat_number": seat_number,
             })
-        if new_rows:
+
+        if active_rows or new_allocations:
             try:
-                supabase.table("seat_allocations").insert(new_rows).execute()
+                supabase.rpc("apply_exam_seat_layout", {
+                    "p_exam_id": exam_id,
+                    "p_new_allocations": new_allocations,
+                    "p_assignments": assignments,
+                }).execute()
             except Exception as exc:
-                # Database uniqueness indexes protect against concurrent admins.
                 raise HTTPException(
                     status_code=409,
-                    detail="Allocations changed while seats were being saved. Run allocation again to continue.",
+                    detail="The seating layout could not be updated safely. Check that the database migration is installed and retry.",
                 ) from exc
 
         saved_result = supabase.table("seat_allocations").select(
-            "student_id,hall_id,row_number,bench_number,seat_number"
+            "student_id,hall_id,row_number,bench_number,seat_number,status"
         ).eq("exam_id", exam_id).execute()
         saved_rows = saved_result.data or []
         saved_student_ids = list({row["student_id"] for row in saved_rows})

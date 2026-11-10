@@ -12,7 +12,7 @@
 <body>
   <div id="app">
     <div class="srm-brand">
-      <img src="assets/srm-logo2.svg" alt="SRMIST Logo" class="srm-logo">
+      <img src="backend/assets/srm-logo2.svg" alt="SRMIST Logo" class="srm-logo">
     </div>
 
     <!-- 1. Landing -->
@@ -251,7 +251,6 @@
       </header>
       <div class="page-body">
         <article class="card toolbar-card">
-          <p class="muted">Classroom layout: 3 rows × 10 columns × 2 students per bench. Halls: A-101, A-102, A-103. Departments: CSE and MECH.</p>
           <p class="form-error" id="allocationError" hidden></p>
           <div class="btn-row">
             <button class="btn primary" type="button" id="runAllocBtn">Allocate Seats</button>
@@ -272,6 +271,7 @@
         <div class="header-actions">
           <button class="btn ghost" type="button" data-go="allocation">Back</button>
           <button class="btn primary" type="button" id="addDepartmentBtn">Add Another Department</button>
+          <button class="btn ghost" type="button" id="downloadHallAllotmentBtn">Print / Save Hall Allotment as PDF</button>
           <button class="btn ghost" type="button" data-logout>Logout</button>
         </div>
       </header>
